@@ -1,4 +1,3 @@
-#define TINY_GSM_MODEM_SIM7000
 // Set serial for debug console (to the Serial Monitor, default speed 115200)
 #define SerialMon Serial
 
@@ -6,10 +5,12 @@
 #include <Arduino.h>
 #include <TinyGsmClient.h>
 
-
 #define SerialAT        Serial1
 #define PWR_PIN         4
 #define LED_PIN         12
+#define UART_BAUD       9600
+#define PIN_TX          27
+#define PIN_RX          26
 
 #ifdef DUMP_AT_COMMANDS
 #include <StreamDebugger.h>
@@ -68,6 +69,25 @@ void modemRestart()
 }
 
 
+void setupGps()
+{
+    // Set LED OFF
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, HIGH);
+
+    modemPowerOn();
+
+    SerialAT.begin(UART_BAUD, SERIAL_8N1, PIN_RX, PIN_TX);
+
+    Serial.println("/**********************************************************/");
+    Serial.println("To initialize the network test, please make sure your GPS");
+    Serial.println("antenna has been connected to the GPS port on the board.");
+    Serial.println("/**********************************************************/\n\n");
+
+    delay(1000);
+}
+
+
 void getGps()
 {
      if (!modem.testAT()) {
@@ -82,6 +102,7 @@ void getGps()
     enableGPS();
 
     float lat,  lon, speed;
+
     while (1) {
         if (modem.getGPS(&lat, &lon, &speed)) {
             Serial.println("The location has been locked, the latitude and longitude are:");
@@ -91,25 +112,12 @@ void getGps()
             break;
         }
         digitalWrite(LED_PIN, !digitalRead(LED_PIN));
-        delay(2000);
+        delay(1000);
     }
 
     disableGPS();
 
-    Serial.println("/**********************************************************/");
-    Serial.println("After the network test is complete, please enter the  ");
-    Serial.println("AT command in the serial terminal.");
-    Serial.println("/**********************************************************/\n\n");
-
-    while (1) {
-        while (SerialAT.available()) {
-            SerialMon.write(SerialAT.read());
-        }
-        while (SerialMon.available()) {
-            SerialAT.write(SerialMon.read());
-        }
-    }
-
+    Serial.println(" ");
 }
 
 

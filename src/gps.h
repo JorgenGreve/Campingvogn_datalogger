@@ -9,6 +9,7 @@ void disableGPS(void);
 void modemPowerOn();
 void modemPowerOff();
 void modemRestart();
+void setupGps();
 void getGps();
 
 
