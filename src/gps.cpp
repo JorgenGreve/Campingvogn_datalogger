@@ -5,23 +5,10 @@
 #include <TinyGsmClient.h>
 #include "gps.h"
 #include "data.h"
+#include "modem.h"
 
-#define SerialAT        Serial1
 #define PWR_PIN         4
 #define LED_PIN         12
-#define UART_BAUD       9600
-#define PIN_TX          27
-#define PIN_RX          26
-
-#ifdef DUMP_AT_COMMANDS
-#include <StreamDebugger.h>
-StreamDebugger debugger(SerialAT, SerialMon);
-TinyGsm modem(debugger);
-#else
-TinyGsm modem(SerialAT);
-#endif
-
-
 
 void enableGPS(void)
 {
@@ -79,8 +66,6 @@ void setupGPS()
 
     modemPowerOn();
 
-    SerialAT.begin(UART_BAUD, SERIAL_8N1, PIN_RX, PIN_TX);
-
     delay(1000);
 }
 
@@ -89,16 +74,16 @@ void fetchGPS()
 {
     Serial.println("");
     Serial.print("Fetching GPS coordinates");
-
-     if (!modem.testAT()) 
-     {
+    
+    if (!modem.testAT()) 
+    {
         Serial.println("Failed to restart modem, attempting to continue without restarting");
         modemRestart();
         return;
     }
 
     enableGPS();
-
+    
     while (1) 
     {
         gpsData.structInUse = true;
