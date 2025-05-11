@@ -3,15 +3,10 @@
 
 #include <TinyGsmClient.h>
 
-
-void enableGPS(void);
-void disableGPS(void);
-void modemPowerOn();
-void modemPowerOff();
-void modemRestart();
-void setupGps();
-void getGps();
-
+void setupGPS();
+void fetchGPS();
+void taskGPS(void *pvParameters);
+void printGPS();
 
 
 #endif
