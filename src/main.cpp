@@ -6,9 +6,8 @@
 #include <Ticker.h>
 #include "gps.h"
 #include "data.h"
-//#include "gprs.h"
-//#include <TinyGsmClient.h>
-//#include <HardwareSerial.h>
+#include "gprs.h"
+
 
 #define UART_BAUD       9600
 #define PIN_TX          27
@@ -28,9 +27,16 @@ void setup()
     Serial.println("-----------------------------------------------------");
     
     setupGPS();
+    setupGPRS();
+    connectGPRS();
+    
+    //delay(5000);
+    fetchGPS();
+    postDataToServer(gpsData, tempHumidData);
 
-    xTaskCreate(taskGPS, "GPS", 2000, NULL, 1, NULL);
 
+    //xTaskCreate(taskGPS, "GPS", 2000, NULL, 1, NULL);
+    //xTaskCreate(taskGPRS, "GPRS", 2000, NULL, 1, NULL);
     Serial.println("|--------------------SETUP DONE---------------------|");
 }
 

@@ -2,3 +2,4 @@
 
 // Her allokeres den globale instans
 GpsData gpsData;
+TempHumidData tempHumidData;

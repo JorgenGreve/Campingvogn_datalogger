@@ -1,7 +1,6 @@
 #ifndef DATA_H
 #define DATA_H
 
-// Strukturdefinition
 struct GpsData {
     bool structInUse;
     bool dataFetched;
@@ -20,7 +19,18 @@ struct GpsData {
     int second;       // Second: Current second of the minute (0-59, based on UTC time from GPS satellites)
 };
 
-// Global instans-erklæring (extern = den findes et andet sted)
-extern GpsData gpsData;
+extern GpsData gpsData; // Global instans-erklæring (extern = den findes et andet sted)
+
+struct TempHumidData{
+    float tempCaravan;
+    float humidCaravan;
+    float tempOutside;
+    float humidOutside;
+};
+
+extern TempHumidData tempHumidData;
+
+
+
 
 #endif
