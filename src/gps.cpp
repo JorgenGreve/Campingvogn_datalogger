@@ -7,6 +7,9 @@
 #include "data.h"
 #include "modem.h"
 #include "gprs.h"
+#include "message_queue_cmd.h"
+#include "message_queue.h"
+#include "esp_task_wdt.h"
 
 #define PWR_PIN         4
 #define LED_PIN         12
@@ -106,7 +109,7 @@ void fetchGPS()
             //Serial.println(" ");
             gpsData.structInUse = false;
             gpsData.dataFetched = true;
-            Serial.print("OK");
+            Serial.println("OK");
             break;
         }
         digitalWrite(LED_PIN, !digitalRead(LED_PIN));
@@ -116,28 +119,6 @@ void fetchGPS()
     }
 
     disableGPS();
-}
-
-
-void taskGPS(void *pvParameters)
-{
-    int cnt = 0;
-
-    while (1) 
-    {
-        fetchGPS();
-        
-        if(cnt == 0)
-        {
-            printGPS();
-            cnt = 10;
-        }
-        
-        Serial.print(" "); Serial.println(cnt);
-        cnt--;
-        isDataConnected();
-        vTaskDelay(1000 / portTICK_PERIOD_MS);  // Run task every 1 second
-    }
 }
 
 
@@ -164,10 +145,52 @@ void printGPS()
 }
 
 
+void taskGPS(void *pvParameters)
+{
+    Serial.println("TaskGPS running");
 
+    GpsCommand cmd;
+    cmd = GPS_IDLE;
 
+    while (1) 
+    {
+        xQueueReceive(gpsQueue, &cmd, portMAX_DELAY);
 
+        switch (cmd) 
+        {
+            case GPS_IDLE:
+            // DO NOTHING
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+            Serial.println("GPS: GPS IDLE");
+            break;
+            
+            case GPS_SETUP:
+            setupGPS();
+            Serial.println("GPS: Setup done");
+            break;
+            
+            case GPS_FETCH_DATA:
+            Serial.println("GPS: Start fetchGPS()");
+            fetchGPS();
+            Serial.println("GPS: Done fetchGPS()");
+            Serial.println("GPS: Fetching data");
+            break;
 
+            case GPS_CHECK_SIGNAL:
+            Serial.println("GPS: Checking signal strength");
+            Serial.println("GPS: NOT IMPLEMENTED");
+            break;
 
+            case GPS_RESET:
+            Serial.println("GPS: Resetting");
+            Serial.println("GPS: NOT IMPLEMENTED");
+            break;
 
+            default:
+            Serial.println("GPS: Unknown command");
+            break;
+        }
+        cmd = GPS_IDLE;
 
+    }
+}

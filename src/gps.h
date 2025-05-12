@@ -5,8 +5,7 @@
 
 void setupGPS();
 void fetchGPS();
-void taskGPS(void *pvParameters);
 void printGPS();
-
+void taskGPS(void *pvParameters);
 
 #endif

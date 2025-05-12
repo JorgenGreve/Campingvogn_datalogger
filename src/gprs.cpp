@@ -25,8 +25,8 @@ const char gprsPass[] = "";
 #include "gprs.h"
 #include "modem.h"
 #include "data.h"
-
-
+#include "message_queue_cmd.h"
+#include "message_queue.h"
 
 #define uS_TO_S_FACTOR 1000000ULL  // Conversion factor for micro seconds to seconds
 #define TIME_TO_SLEEP  60          // Time ESP32 will go to sleep (in seconds)
@@ -238,57 +238,45 @@ bool postDataToServer(const GpsData& gpsData, const TempHumidData& tempHumidData
 }
 
 
-
-/*
-bool postDataToServer(const GpsData& gpsData, const TempHumidData& tempHumidData)
-{
-    Serial.println("Post data to server start...");
-    HTTPClient http;
-    String url = "http://caravan.jorgre.dk/submit.php";  // ← Ret til dit endpoint
-
-    // Konstruér timestamp i SQL DATETIME-format
-    char timestamp[20];
-    sprintf(timestamp, "%04d-%02d-%02d %02d:%02d:%02d",
-            gpsData.year, gpsData.month, gpsData.day,
-            gpsData.hour, gpsData.minute, gpsData.second);
-
-    // Konstruér POST payload
-    String postData = "timestamp=" + String(timestamp) +
-                      "&lat=" + String(gpsData.lat, 6) +
-                      "&lon=" + String(gpsData.lon, 6) +
-                      "&speed=" + String(gpsData.speed, 2) +
-                      "&alt=" + String(gpsData.alt, 1) +
-                      "&temp_in=" + String(tempHumidData.tempCaravan, 1) +
-                      "&hum_in=" + String(tempHumidData.humidCaravan, 1) +
-                      "&temp_out=" + String(tempHumidData.tempOutside, 1) +
-                      "&hum_out=" + String(tempHumidData.humidOutside, 1);
-
-    Serial.println("POSTing: " + postData);
-
-    http.begin(url);
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-    int httpResponseCode = http.POST(postData);
-
-    if (httpResponseCode > 0) {
-        String response = http.getString();
-        Serial.println("HTTP Response: " + String(httpResponseCode));
-        Serial.println("Server reply: " + response);
-        http.end();
-        return response == "OK";  // ← vigtigt: PHP skal returnere "OK"
-    } else {
-        Serial.println("HTTP POST failed. Error: " + String(httpResponseCode));
-        http.end();
-        return false;
-    }
-}
-
-
 void taskGPRS(void *pvParameters)
 {
-    postDataToServer(gpsData, tempHumidData);
+    Serial.println("TaskGPRS running");
+    GprsCommand cmd;
+    cmd = GPRS_IDLE;
 
-    vTaskDelay(10000 / portTICK_PERIOD_MS);
+    while (1) 
+    {
+        xQueueReceive(gprsQueue, &cmd, portMAX_DELAY);
+
+        switch (cmd) 
+        {
+            case GPRS_IDLE:
+            // DO NOTHING
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+            Serial.println("GPRS: GPRS IDLE");
+            break;
+
+            case GPRS_POST_DATA:
+            postDataToServer(gpsData, tempHumidData);
+            Serial.println("GPRS: Executing POST");
+            break;
+
+            case GPRS_CHECK_SIGNAL:
+            Serial.println("GPRS: Checking signal strength");
+            Serial.println("GPS: NOT IMPLEMENTED");
+            break;
+
+            case GPRS_RESET_MODEM:
+            Serial.println("GPRS: Resetting modem");
+            Serial.println("GPS: NOT IMPLEMENTED");
+            break;
+
+            default:
+            Serial.println("GPRS: Unknown command");
+            Serial.println("GPS: NOT IMPLEMENTED");
+            break;
+        }
+        cmd = GPRS_IDLE;
+
+    }
 }
-*/
-
