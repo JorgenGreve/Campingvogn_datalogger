@@ -1,6 +1,3 @@
-// Set serial for debug console (to the Serial Monitor, default speed 115200)
-#define SerialMon Serial
-
 #include <Arduino.h>
 #include <TinyGsmClient.h>
 #include "gps.h"
@@ -9,91 +6,71 @@
 #include "gprs.h"
 #include "message_queue_cmd.h"
 #include "message_queue.h"
-#include "esp_task_wdt.h"
 
 #define PWR_PIN         4
 #define LED_PIN         12
 
-void enableGPS(void)
-{
-    // Set Modem GPS Power Control Pin to HIGH ,turn on GPS power
-    // Only in version 20200415 is there a function to control GPS power
+void enableGPS(void) {
     modem.sendAT("+CGPIO=0,48,1,1");
     if (modem.waitResponse(10000L) != 1) {
-        DBG("Set GPS Power HIGH Failed");
+        Serial.println("⚠️ Set GPS Power HIGH Failed");
     }
-    modem.enableGPS();
+
+    if (!modem.enableGPS()) {
+        Serial.println("⚠️ modem.enableGPS() failed");
+    } else {
+        Serial.println("✅ GPS enabled");
+    }
 }
 
-void disableGPS(void)
-{
-    // Set Modem GPS Power Control Pin to LOW ,turn off GPS power
-    // Only in version 20200415 is there a function to control GPS power
+void disableGPS(void) {
     modem.sendAT("+CGPIO=0,48,1,0");
     if (modem.waitResponse(10000L) != 1) {
-        DBG("Set GPS Power LOW Failed");
+        Serial.println("⚠️ Set GPS Power LOW Failed");
     }
     modem.disableGPS();
+    Serial.println("✅ GPS disabled");
 }
 
-void modemPowerOn()
-{
-    pinMode(PWR_PIN, OUTPUT);
-    digitalWrite(PWR_PIN, HIGH);
-    delay(1000);    //Datasheet Ton mintues = 1S
-    digitalWrite(PWR_PIN, LOW);
+void restartModem() {
+    Serial.println("🔁 Restarting modem...");
+    modem.poweroff();
+    delay(2000);
+    modem.init();
 }
 
-void modemPowerOff()
-{
-    pinMode(PWR_PIN, OUTPUT);
-    digitalWrite(PWR_PIN, HIGH);
-    delay(1500);    //Datasheet Ton mintues = 1.2S
-    digitalWrite(PWR_PIN, LOW);
-}
-
-
-void modemRestart()
-{
-    modemPowerOff();
-    delay(1000);
-    modemPowerOn();
-}
-
-
-void setupGPS()
-{
+void initGPS() {
     gpsData.dataFetched = false;
-    // Set LED OFF
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
 
-    modemPowerOn();
-
-    delay(1000);
+    fetchGPSsetup();
 }
 
+void fetchGPSsetup() {
+    Serial.println("→ fetchGPSsetup");
 
-void fetchGPS()
-{
-    Serial.println("");
-    Serial.print("Fetching GPS coordinates");
-    
-    if (!modem.testAT()) 
-    {
-        Serial.println("Failed to restart modem, attempting to continue without restarting");
-        modemRestart();
-        return;
+    if (!modem.testAT()) {
+        Serial.println("⚠️ testAT() failed — attempting restart");
+        restartModem();
+        delay(1000);
+        if (!modem.init()) {
+            Serial.println("❌ modem.init() failed");
+            return;
+        }
     }
 
+    Serial.println("🔋 Enabling GPS...");
     enableGPS();
-    
-    while (1) 
-    {
+
+    const int maxTries = 1000;
+    int tries = 0;
+
+    while (tries++ < maxTries) {
         gpsData.structInUse = true;
 
-        if (modem.getGPS(&gpsData.lat, 
-                         &gpsData.lon, 
+        if (modem.getGPS(&gpsData.lat,
+                         &gpsData.lon,
                          &gpsData.speed,
                          &gpsData.alt,
                          &gpsData.vsat,
@@ -104,26 +81,29 @@ void fetchGPS()
                          &gpsData.day,
                          &gpsData.hour,
                          &gpsData.minute,
-                         &gpsData.second)) 
-        {
-            //Serial.println(" ");
-            gpsData.structInUse = false;
+                         &gpsData.second)) {
             gpsData.dataFetched = true;
-            Serial.println("OK");
+            gpsData.structInUse = false;
+            Serial.println("✅ GPS fix received!");
+            //printGPS();
             break;
+        } else {
+            Serial.print(".");
         }
-        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
-        Serial.print(".");
+
         gpsData.structInUse = false;
-        delay(1000);    // Wait a second before fetching coordinates again
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
+    if (!gpsData.dataFetched) {
+        Serial.println("❌ No GPS fix received within time limit.");
+    }
+
+    Serial.println("🔌 Disabling GPS");
     disableGPS();
 }
 
-
-void printGPS()
-{
+void printGPS() {
     Serial.println("");
     Serial.println("Fetched data from GPS");
     Serial.print("latitude:              "); Serial.println(gpsData.lat, 6);
@@ -141,56 +121,53 @@ void printGPS()
     Serial.print("Second:                "); Serial.print(gpsData.second); Serial.println(" seconds");
     Serial.print("Has data been fetched? "); Serial.println(gpsData.dataFetched);
     Serial.print("Struct in use?         "); Serial.println(gpsData.structInUse);
-    //vTaskDelay(6000 / portTICK_PERIOD_MS);
 }
 
-
-void taskGPS(void *pvParameters)
-{
+void taskGPS(void *pvParameters) {
     Serial.println("TaskGPS running");
+    GpsCommand cmd = GPS_IDLE;
+    MainCommand cmdMAIN;
 
-    GpsCommand cmd;
-    cmd = GPS_IDLE;
+    while (1) {
+        GpsCommand incomingCmd;
+        if (xQueueReceive(gpsQueue, &incomingCmd, 0) == pdPASS) {
+            cmd = incomingCmd;
+        }
 
-    while (1) 
-    {
-        xQueueReceive(gpsQueue, &cmd, portMAX_DELAY);
-
-        switch (cmd) 
-        {
+        switch (cmd) {
             case GPS_IDLE:
-            // DO NOTHING
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-            Serial.println("GPS: GPS IDLE");
-            break;
-            
+                vTaskDelay(500 / portTICK_PERIOD_MS);
+                break;
+
             case GPS_SETUP:
-            setupGPS();
-            Serial.println("GPS: Setup done");
-            break;
-            
+                Serial.print("GPS: GPS_SETUP");
+                initGPS();
+                cmdMAIN = MAIN_SETUP_GPRS;
+                xQueueSend(mainQueue, &cmdMAIN, portMAX_DELAY);
+                Serial.println(" - OK");
+                cmd = GPS_IDLE;
+                break;
+
+            case GPS_RUN:
+                // Her kan du evt. kalde fetchGPS() igen kontinuerligt
+                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                break;
+
             case GPS_FETCH_DATA:
-            Serial.println("GPS: Start fetchGPS()");
-            fetchGPS();
-            Serial.println("GPS: Done fetchGPS()");
-            Serial.println("GPS: Fetching data");
-            break;
+                Serial.println("GPS: Fetching data");
+                break;
 
             case GPS_CHECK_SIGNAL:
-            Serial.println("GPS: Checking signal strength");
-            Serial.println("GPS: NOT IMPLEMENTED");
-            break;
+                Serial.println("GPS: Checking signal strength (not implemented)");
+                break;
 
             case GPS_RESET:
-            Serial.println("GPS: Resetting");
-            Serial.println("GPS: NOT IMPLEMENTED");
-            break;
+                Serial.println("GPS: Resetting (not implemented)");
+                break;
 
             default:
-            Serial.println("GPS: Unknown command");
-            break;
+                Serial.println("GPS: Unknown command");
+                break;
         }
-        cmd = GPS_IDLE;
-
     }
 }

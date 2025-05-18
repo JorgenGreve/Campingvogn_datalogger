@@ -5,7 +5,7 @@
 
 #include "data.h"  // ← Tilføj denne (eller hvad filen med structs hedder)
 
-void setupGPRS();
+void initGPRS();
 void checkGPRS();
 bool connectGPRS();
 bool isDataConnected();

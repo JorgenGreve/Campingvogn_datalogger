@@ -1,17 +1,4 @@
 
-#define TINY_GSM_RX_BUFFER 1024 // Set RX buffer to 1Kb
-//#define SerialAT Serial1
-
-
-//   Tests enabled
-
-#define TINY_GSM_TEST_GPRS    true
-//#define TINY_GSM_TEST_GPS     true
-//#define TINY_GSM_POWERDOWN    true
-
-// set GSM PIN, if any
-#define GSM_PIN ""
-
 // Your GPRS credentials, if any
 const char apn[]  = "internet.mtelia.dk";     //SET TO YOUR APN
 const char gprsUser[] = "";
@@ -27,59 +14,67 @@ const char gprsPass[] = "";
 #include "data.h"
 #include "message_queue_cmd.h"
 #include "message_queue.h"
+#include "esp_task_wdt.h"
 
-#define uS_TO_S_FACTOR 1000000ULL  // Conversion factor for micro seconds to seconds
-#define TIME_TO_SLEEP  60          // Time ESP32 will go to sleep (in seconds)
+#include <HardwareSerial.h>
 
-#define UART_BAUD   115200
-#define PIN_DTR     25
-#define PIN_TX      27
-#define PIN_RX      26
-#define PWR_PIN     4
-
-#define SD_MISO     2
-#define SD_MOSI     15
-#define SD_SCLK     14
-#define SD_CS       13
-#define LED_PIN     12
-
+#define GPRS_PWR_PIN     4
+#define LED_PIN         12
 
 int counter, lastIndex, numberOfPieces = 24;
 String pieces[24], input;
 
-
-void setupGPRS()
+void initGPRS()
 {
-    // Set LED OFF
+    // Sluk LED
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
 
-    pinMode(PWR_PIN, OUTPUT);
-    digitalWrite(PWR_PIN, HIGH);
-    // Starting the machine requires at least 1 second of low level, and with a level conversion, the levels are opposite
-    delay(1000);
-    digitalWrite(PWR_PIN, LOW);
+    // Tænd for modemet med et "power pulse"
+    pinMode(GPRS_PWR_PIN, OUTPUT);
+    digitalWrite(GPRS_PWR_PIN, HIGH);
+    delay(1000);                    // Minimum 1 sekund "lav" for at tænde
+    digitalWrite(GPRS_PWR_PIN, LOW);    // Slut med lav (modsat logik pga. konvertering)
+    delay(100);
 
-    SerialAT.begin(UART_BAUD, SERIAL_8N1, PIN_RX, PIN_TX);
+    SerialAT.println("AT");
 
-    // Restart takes quite some time
-    // To skip it, call init() instead of restart()
-    Serial.println("Initializing modem...");
-    if (!modem.init()) {
-        Serial.println("Failed to restart modem, attempting to continue without restarting");
+    // Initialiser modem (ikke restart – hurtigere og bevarer SIM mm.)
+    bool modemReady = false;
+    for (int i = 0; i < 3; i++) {
+        if (modem.init()) {
+            modemReady = true;
+            break;
+        }
+        Serial.println("Modem init failed, retrying...");
+        delay(1500);
     }
-    
-    String name = modem.getModemName();
-    delay(500);
-    Serial.println("Modem Name: " + name);
 
-    String modemInfo = modem.getModemInfo();
-    delay(500);
-    Serial.println("Modem Info: " + modemInfo);
+    if (!modemReady) {
+        Serial.println("Fatal: Modem could not be initialized.");
+        return;
+    }
+
+    // Hent navn og info
+    String name = modem.getModemName();
+    String info = modem.getModemInfo();
+
+    Serial.println("Modem Name: " + name);
+    Serial.println("Modem Info: " + info);
+
+    // Tjek om modem rapporterer korrekt navn
+    if (!name.startsWith("SIMCOM_Ltd SIMCOM_SIM7000E")) {
+        Serial.println("Warning: Wrong modem identication, retrying...");
+        modem.restart();  // fallback
+        delay(2000);
+        name = modem.getModemName();
+        Serial.println("Retry Modem Name: " + name);
+    }
 }
 
 
-bool connectGPRS() 
+
+bool connectGPRS()
 {
     Serial.println("Waiting for network...");
     modem.sendAT("+CFUN=0");
@@ -173,102 +168,63 @@ bool isDataConnected()
 }
 
 
-bool postDataToServer(const GpsData& gpsData, const TempHumidData& tempHumidData)
-{
-    Serial.println("Post data to server start...");
-
-    // Konstruér timestamp i SQL DATETIME-format
-    char timestamp[20];
-    sprintf(timestamp, "%04d-%02d-%02d %02d:%02d:%02d",
-            gpsData.year, gpsData.month, gpsData.day,
-            gpsData.hour, gpsData.minute, gpsData.second);
-
-    // Konstruér POST payload
-    String postData = "timestamp=" + String(timestamp) +
-                      "&lat=" + String(gpsData.lat, 6) +
-                      "&lon=" + String(gpsData.lon, 6) +
-                      "&speed=" + String(gpsData.speed, 2) +
-                      "&alt=" + String(gpsData.alt, 1) +
-                      "&temp_in=" + String(tempHumidData.tempCaravan, 1) +
-                      "&hum_in=" + String(tempHumidData.humidCaravan, 1) +
-                      "&temp_out=" + String(tempHumidData.tempOutside, 1) +
-                      "&hum_out=" + String(tempHumidData.humidOutside, 1);
-
-    Serial.println("POSTing: " + postData);
-
-    // AT-kommandoer
-    SerialAT.println("AT+HTTPTERM"); delay(100); // Afslut tidligere session hvis nødvendigt
-    SerialAT.println("AT+HTTPINIT"); delay(200);
-    SerialAT.println("AT+HTTPPARA=\"CID\",1"); delay(100);
-    SerialAT.println("AT+HTTPPARA=\"URL\",\"http://caravan.jorgre.dk/submit.php\""); delay(200);
-    SerialAT.println("AT+HTTPPARA=\"CONTENT\",\"application/x-www-form-urlencoded\""); delay(100);
-
-    // Angiv længde og vent på prompt
-    SerialAT.print("AT+HTTPDATA="); SerialAT.print(postData.length()); SerialAT.println(",10000");
-    delay(100);
-    if (SerialAT.find("DOWNLOAD")) {
-        SerialAT.print(postData);  // Send data
-        delay(500);
-    } else {
-        Serial.println("Failed to get DOWNLOAD prompt.");
-        return false;
-    }
-
-    SerialAT.println("AT+HTTPACTION=1");  // 1 = POST
-    if (!SerialAT.find("+HTTPACTION: 1,")) {
-        Serial.println("POST failed.");
-        return false;
-    }
-
-    int statusCode = SerialAT.parseInt();
-    int dataLen = SerialAT.parseInt();
-    Serial.print("HTTP Status: "); Serial.println(statusCode);
-
-    if (statusCode == 200) {
-        SerialAT.println("AT+HTTPREAD");
-        if (SerialAT.find("+HTTPREAD:")) {
-            String response = SerialAT.readStringUntil('\n');
-            Serial.println("Server reply: " + response);
-            return response.indexOf("OK") >= 0;
+bool waitForResponse(const String& target, int timeoutMs) {
+    unsigned long start = millis();
+    String buffer;
+    while (millis() - start < timeoutMs) {
+        while (SerialAT.available()) {
+            char c = SerialAT.read();
+            buffer += c;
+            if (buffer.endsWith(target)) {
+                return true;
+            }
         }
+        vTaskDelay(10 / portTICK_PERIOD_MS); // Giv CPU-tid til andre tasks
     }
-
-    Serial.println("Server did not return success.");
     return false;
 }
 
 
+
 void taskGPRS(void *pvParameters)
 {
-    Serial.println("TaskGPRS running");
+    Serial.println("TaskGPRS  running");
     GprsCommand cmd;
+    MainCommand cmdMAIN;
+    GpsCommand cmdGPS;
+
     cmd = GPRS_IDLE;
 
     while (1) 
     {
-        xQueueReceive(gprsQueue, &cmd, portMAX_DELAY);
+        GprsCommand incomingCmd;
+        if (xQueueReceive(gprsQueue, &incomingCmd, 0) == pdPASS) {
+            cmd = incomingCmd;
+        }
 
         switch (cmd) 
         {
             case GPRS_IDLE:
             // DO NOTHING
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-            Serial.println("GPRS: GPRS IDLE");
+            vTaskDelay(500 / portTICK_PERIOD_MS);
+            //Serial.println("GPRS: GPRS IDLE");
             break;
 
-            case GPRS_POST_DATA:
-            postDataToServer(gpsData, tempHumidData);
-            Serial.println("GPRS: Executing POST");
+            case GPRS_SETUP:
+            Serial.println("GPRS:     GPRS_SETUP");
+            initGPRS();
+            connectGPRS();
+            Serial.println("");
+            Serial.println("GPRS:     GPRS_SETUP            - OK");
+            cmdMAIN = MAIN_SETUP_DONE;
+            xQueueSend(mainQueue, &cmdMAIN, portMAX_DELAY);
+            cmd = GPRS_IDLE;
             break;
 
-            case GPRS_CHECK_SIGNAL:
-            Serial.println("GPRS: Checking signal strength");
-            Serial.println("GPS: NOT IMPLEMENTED");
-            break;
-
-            case GPRS_RESET_MODEM:
-            Serial.println("GPRS: Resetting modem");
-            Serial.println("GPS: NOT IMPLEMENTED");
+            case GPRS_RUN:
+            //postDataToServer(gpsData, tempHumidData);
+            vTaskDelay(20000 / portTICK_PERIOD_MS);
+            Serial.print("GPRS: GPRS_RUN");
             break;
 
             default:
@@ -276,7 +232,7 @@ void taskGPRS(void *pvParameters)
             Serial.println("GPS: NOT IMPLEMENTED");
             break;
         }
-        cmd = GPRS_IDLE;
+        
 
     }
 }

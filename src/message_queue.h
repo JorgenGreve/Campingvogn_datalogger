@@ -3,6 +3,9 @@
 
 #include <Arduino.h>
 
+// Kø til MAIN-beskeder
+extern QueueHandle_t mainQueue;
+
 // Kø til GPRS-beskeder
 extern QueueHandle_t gprsQueue;
 
