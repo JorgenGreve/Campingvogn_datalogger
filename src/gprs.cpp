@@ -216,7 +216,7 @@ void taskGPRS(void *pvParameters)
             connectGPRS();
             Serial.println("");
             Serial.println("GPRS:     GPRS_SETUP            - OK");
-            cmdMAIN = MAIN_SETUP_DONE;
+            //cmdMAIN = MAIN_SETUP_DONE;
             xQueueSend(mainQueue, &cmdMAIN, portMAX_DELAY);
             cmd = GPRS_IDLE;
             break;

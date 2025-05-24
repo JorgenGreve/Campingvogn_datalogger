@@ -3,13 +3,17 @@
 
 #include <Arduino.h>
 
-// Kø til MAIN-beskeder
-extern QueueHandle_t mainQueue;
+// Kø til GPS-beskeder
+extern QueueHandle_t gpsQueue;
 
 // Kø til GPRS-beskeder
 extern QueueHandle_t gprsQueue;
 
-// Kø til GPS-beskeder
-extern QueueHandle_t gpsQueue;
+// Kø til DATA-beskeder
+extern QueueHandle_t dataQueue;
+
+// Kø til MAIN-beskeder
+extern QueueHandle_t mainQueue;
+
 
 #endif

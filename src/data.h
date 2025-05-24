@@ -1,9 +1,14 @@
 #ifndef DATA_H
 #define DATA_H
 
+void taskDATA(void *pvParameters);
+
+
+
+
 struct GpsData {
-    bool structInUse;
-    bool dataFetched;
+    bool gpsStructInUse;
+    bool gpsDataReady;
     float lat;        // Latitude: Geographical latitude (positive for north, negative for south), typically with a precision of up to 6 decimal places (~0.0001°), accurate to about 1 meter
     float lon;        // Longitude: Geographical longitude (positive for east, negative for west), typically with a precision of up to 6 decimal places (~0.0001°), accurate to about 1 meter
     float speed;      // Speed: Speed in km/h, calculated from GPS data based on movement over time (accuracy can vary with signal quality, but generally within 0.1-0.5 km/h)
@@ -19,18 +24,18 @@ struct GpsData {
     int second;       // Second: Current second of the minute (0-59, based on UTC time from GPS satellites)
 };
 
-extern GpsData gpsData; // Global instans-erklæring (extern = den findes et andet sted)
-
 struct TempHumidData{
+    bool tempHumidStructInUse;
+    bool tempHumidDataReady;
     float tempCaravan;
     float humidCaravan;
     float tempOutside;
     float humidOutside;
 };
 
+
+
+extern GpsData gpsData; // Global instans-erklæring (extern = den findes et andet sted)
 extern TempHumidData tempHumidData;
-
-
-
 
 #endif

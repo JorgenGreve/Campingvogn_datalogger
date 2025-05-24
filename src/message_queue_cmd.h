@@ -5,14 +5,10 @@
 
 typedef enum 
 {
-    MAIN_IDLE = 0,
-    MAIN_SETUP_GPS,
-    MAIN_SETUP_GPRS,
-    MAIN_SETUP_DONE,
-    MAIN_RUN_GPS,
-    MAIN_RUN_TEMP_HUMID,
-    MAIN_RUN_GPRS,
-} MainCommand;
+    GPS_IDLE = 0,
+    GPS_RUN,
+} GpsCommand;
+
 
 typedef enum 
 {
@@ -21,15 +17,21 @@ typedef enum
     GPRS_RUN,
 } GprsCommand;
 
+
 typedef enum 
 {
-    GPS_IDLE = 0,
-    GPS_SETUP,
-    GPS_RUN,
-    GPS_FETCH_DATA,
-    GPS_CHECK_SIGNAL,
-    GPS_RESET,
-    GPS_RESET_MODEM,
-} GpsCommand;
+    DATA_IDLE = 0,
+    GPS_DATA_READY,
+    TEMP_HUMID_DATA_READY,
+} DataCommand;
+
+
+typedef enum 
+{
+    MAIN_IDLE = 0,
+    MAIN_RUN_GPS,
+    MAIN_RUN_TEMP_HUMID,
+    MAIN_RUN_GPRS,
+} MainCommand;
 
 #endif

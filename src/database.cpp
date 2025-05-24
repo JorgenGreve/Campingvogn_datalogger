@@ -11,12 +11,12 @@ const char* serverName = "http://caravan.jorgre.dk/submit.php"; // Server URL
 
 bool postDataToServer(const GpsData& gpsData, const TempHumidData& tempHumidData)
 {
-    if(gpsData.dataFetched == false) 
+    if(gpsData.gpsDataReady== false) 
     {
         return false;
     }
     int cnt = 0;
-    while (gpsData.structInUse) {
+    while (gpsData.gpsStructInUse) {
         Serial.println("");
         Serial.print("Struct is in use "); Serial.println(cnt++);
         Serial.println("");

@@ -13,9 +13,11 @@
 #include "data.h"
 
 // Message queue handlers
-QueueHandle_t mainQueue;
-QueueHandle_t gprsQueue;
 QueueHandle_t gpsQueue;
+QueueHandle_t gprsQueue;
+QueueHandle_t dataQueue;
+QueueHandle_t mainQueue;
+
 
 void taskMAIN(void *pvParameters);
 
@@ -42,37 +44,60 @@ void setup()
     postDataToServer(gpsData, tempHumidData);
 
     // Create message queues
-    mainQueue = xQueueCreate(10, sizeof(int));
-    gprsQueue = xQueueCreate(10, sizeof(int));
     gpsQueue  = xQueueCreate(10, sizeof(int));
+    //senseQueue = xQueueCreate(10, sizeof(int));
+    dataQueue = xQueueCreate(10, sizeof(int));
+    mainQueue = xQueueCreate(10, sizeof(int));
+    
+    
 
-    if (!gprsQueue || !gpsQueue) 
+    if (!gpsQueue || !dataQueue || !mainQueue) 
     {
-        Serial.println("Fejl ved kø-oprettelse!");
+        Serial.println("Queue creation error!");
         while (1);
     }
 
-    /*
-    xTaskCreate(taskGPS, "GPS", 2000, NULL, 1, NULL);
-    delay(100);
-    xTaskCreate(taskGPRS, "GPRS", 2000, NULL, 1, NULL);
-    delay(100);
-    xTaskCreate(taskMAIN, "MAIN", 2000, NULL, 1, NULL);
-    */
-   Serial.println("-----------------------------------------------------");
-   Serial.println("|                  SETUP HAS RUN                    |");
-   Serial.println("-----------------------------------------------------");
+    //------------------------------------------------------------------------------------------------
+    // taskMODEM        check GPRS status and reinitialize if needed
+    //------------------------------------------------------------------------------------------------
+    //xTaskCreatePinnedToCore(taskMODEM,"GPS", 2000, NULL, 1, NULL, 1);
+
+    //------------------------------------------------------------------------------------------------
+    // taskGPS          handle all GPS related tasks
+    //------------------------------------------------------------------------------------------------
+    xTaskCreatePinnedToCore(taskGPS,"GPS", 2000, NULL, 2, NULL, 1);
+    
+    //------------------------------------------------------------------------------------------------
+    // taskSENSE        handle all sensor related tasks
+    //------------------------------------------------------------------------------------------------
+    //xTaskCreatePinnedToCore(taskSENSE,"SENSE", 2000, NULL, 2, NULL, 1);
+    
+    //------------------------------------------------------------------------------------------------
+    // taskDATA         collect all data, make it ready for transmission and store in a buffer
+    //------------------------------------------------------------------------------------------------
+    xTaskCreatePinnedToCore(taskDATA,"DATA", 2000, NULL, 3, NULL, 1);
+    
+    //------------------------------------------------------------------------------------------------
+    // taskMAIN         transmit data to the database whenever data is ready
+    //------------------------------------------------------------------------------------------------
+    xTaskCreatePinnedToCore(taskMAIN,"MAIN", 2000, NULL, 1, NULL, 1);
+    
+    Serial.println("-----------------------------------------------------");
+    Serial.println("|                  SETUP HAS RUN                    |");
+    Serial.println("-----------------------------------------------------");
 }
 
 
-void taskMAIN(void *pvParameters)
+
+
+void taskMAIN(void *pvParameters) // taskMAIN is responsible for checking whenever data is ready to be transmitted and then transmit the data
 {
     Serial.println("TaskMAIN  running");
     MainCommand cmd;
     GpsCommand cmdGPS;
     GprsCommand cmdGPRS;
 
-    cmd = MAIN_SETUP_GPS;
+    cmd = MAIN_IDLE;
 
     while(1)
     {
@@ -84,30 +109,8 @@ void taskMAIN(void *pvParameters)
         switch (cmd) 
         {
             case MAIN_IDLE:
-            // DO NOTHING
-            vTaskDelay(500 / portTICK_PERIOD_MS);
-            //Serial.println("MAIN: MAIN IDLE");
-            break;
-
-            case MAIN_SETUP_GPS:                        
-            Serial.print("MAIN:     MAIN_SETUP_GPS");
-            cmdGPS = GPS_SETUP;
-            xQueueSend(gpsQueue, &cmdGPS, portMAX_DELAY);
-            Serial.println("        - OK");
-            vTaskDelay(10000 / portTICK_PERIOD_MS);
-            break;
+            vTaskDelay(100 / portTICK_PERIOD_MS);
             
-            case MAIN_SETUP_GPRS:
-            Serial.print("MAIN:     MAIN_SETUP_GPRS");
-            cmdGPRS = GPRS_SETUP;
-            xQueueSend(gprsQueue, &cmdGPRS, portMAX_DELAY);
-            Serial.println("       - OK");
-            break;
-            
-            case MAIN_SETUP_DONE:
-            Serial.println("MAIN:     MAIN_SETUP            - DONE");
-            cmd = MAIN_RUN_GPS;
-            xQueueSend(mainQueue, &cmd, portMAX_DELAY);
             break;
 
             case MAIN_RUN_GPS:

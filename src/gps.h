@@ -4,7 +4,8 @@
 #include <TinyGsmClient.h>
 
 void initGPS();
-void fetchGPSsetup();
+bool fetchGPSsetup();
+bool fetchGPSrunning();
 void printGPS();
 void taskGPS(void *pvParameters);
 
