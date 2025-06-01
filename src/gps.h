@@ -3,7 +3,7 @@
 
 #include <TinyGsmClient.h>
 
-void initGPS();
+bool initGPS(void);
 bool fetchGPSsetup();
 bool fetchGPSrunning();
 void printGPS();

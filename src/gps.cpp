@@ -19,6 +19,43 @@ void gpsPowerOn(void)
 }
 
 
+bool testGPSInitSequence()
+{
+    Serial.println("📡 Starting GPS Init Test Sequence");
+
+    modem.sendAT();
+    if (modem.waitResponse(2000L) != 1)
+    {
+        Serial.println("⚠️ No response to AT");
+        return false;
+    }
+
+    modem.sendAT("+CFUN=1");
+    if (modem.waitResponse(2000L) != 1)
+    {
+        Serial.println("⚠️ AT+CFUN=1 failed");
+        return false;
+    }
+
+    modem.sendAT("+CGNSPWR=1");
+    if (modem.waitResponse(2000L) != 1)
+    {
+        Serial.println("⚠️ AT+CGNSPWR=1 failed");
+        return false;
+    }
+
+    modem.sendAT("+CGNSINF");
+    if (modem.waitResponse(2000L, "+CGNSINF") != 1)
+    {
+        Serial.println("⚠️ AT+CGNSINF failed");
+        return false;
+    }
+
+    Serial.println("✅ GPS Init Sequence OK");
+    return true;
+}
+
+
 bool enableGPS(void)
 {
     modem.sendAT("+CGPIO=0,48,1,1");
@@ -28,7 +65,7 @@ bool enableGPS(void)
         return false;
     }
 
-    if (!modem.enableGPS()) 
+    if (!modem.enableGPS())
     {
         Serial.println("⚠️ modem.enableGPS() failed");
         return false;
@@ -54,16 +91,21 @@ void restartModem() {
     modem.init();
 }
 
-void initGPS() {
+bool initGPS(void)
+{
     gpsData.gpsDataReady= false;
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
 
     gpsPowerOn();
 
-    while(!fetchGPSsetup())
+    if(!fetchGPSsetup())
     {
-        delay(500);
+        return false;
+    }
+    else
+    {
+        return true;
     }
 }
 
@@ -113,36 +155,29 @@ void parseGpsStatus(const String& line, bool& gpsFix, int& gpsConn, int& gpsVisi
 
 bool fetchGPSsetup()
 {
-    Serial.println("→ fetchGPSsetup");
+    Serial.println("→ fetchGPSsetup()");
 
     if(!modem.testAT()) 
     {
         Serial.println("⚠️ testAT() failed");
         return false;
     }
-
-    if(!modem.init())
-    {
-        Serial.println("❌ modem.init() failed");
-        return false;
-    }
-
     if(!enableGPS())
     {
         Serial.println("❌ enableGPS() failed");
         return false;
     }
 
-    const int maxTries = 1000;
+    const int maxTries = 2;
     int tries = 0;
     bool gpsFix;
     int gpsConn;
     int gpsVisible;
     
-    while (tries++ < maxTries) 
+    while (tries++ < maxTries)
     {
         String line = modem.getGPSraw();
-        if (line.length() > 0) 
+        if (line.length() > 0)
         {
             parseGpsStatus(line, gpsFix, gpsConn, gpsVisible);
 
@@ -170,7 +205,7 @@ bool fetchGPSsetup()
             Serial.print("✅ GPS fix received! Connected to "); Serial.print(gpsConn); Serial.println(" satellittes");
             //printGPS();
             break;
-        } 
+        }
         else
         {
             //Serial.print(".");
@@ -213,7 +248,7 @@ bool fetchGPSrunning()
                      &gpsData.day,
                      &gpsData.hour,
                      &gpsData.minute,
-                     &gpsData.second)) 
+                     &gpsData.second))
     {
         gpsData.gpsDataReady = true;        // Måske der bare skulle bruges et lokalt flag til dette
         gpsData.gpsStructInUse = false;
@@ -234,7 +269,7 @@ bool fetchGPSrunning()
 
 
 
-void printGPS() 
+void printGPS()
 {
     Serial.println("");
     Serial.println("Fetched data from GPS");
@@ -262,15 +297,15 @@ void taskGPS(void *pvParameters)
     GpsCommand cmd = GPS_RUN;
     DataCommand dataCmd;
 
-    while (1) 
+    while (1)
     {
         GpsCommand incomingCmd;
-        if (xQueueReceive(gpsQueue, &incomingCmd, 0) == pdPASS) 
+        if (xQueueReceive(gpsQueue, &incomingCmd, 0) == pdPASS)
         {
             cmd = incomingCmd;
         }
 
-        switch (cmd) 
+        switch (cmd)
         {
             case GPS_IDLE:
                 vTaskDelay(100 / portTICK_PERIOD_MS);

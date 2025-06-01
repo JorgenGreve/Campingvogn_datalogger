@@ -26,7 +26,8 @@ struct GpsData {
 
 struct TempHumidData{
     bool tempHumidStructInUse;
-    bool tempHumidDataReady;
+    bool tempHumidDataReadyCaravan;
+    bool tempHumidDataReadyOutside;
     float tempCaravan;
     float humidCaravan;
     float tempOutside;

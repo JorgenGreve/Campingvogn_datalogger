@@ -24,7 +24,7 @@ const char gprsPass[] = "";
 int counter, lastIndex, numberOfPieces = 24;
 String pieces[24], input;
 
-void initGPRS()
+bool initGPRS(void)
 {
     // Sluk LED
     pinMode(LED_PIN, OUTPUT);
@@ -39,37 +39,46 @@ void initGPRS()
 
     SerialAT.println("AT");
 
-    // Initialiser modem (ikke restart – hurtigere og bevarer SIM mm.)
-    bool modemReady = false;
-    for (int i = 0; i < 3; i++) {
-        if (modem.init()) {
-            modemReady = true;
-            break;
+    if (modem.getSimStatus() != SIM_READY)
+    {
+        Serial.println("⚠️ No SIM detected – skipping GPRS");
+        return false;
+    }
+    else
+    {
+        // Initialiser modem (ikke restart – hurtigere og bevarer SIM mm.)
+        bool modemReady = false;
+        for (int i = 0; i < 3; i++) {
+            if (modem.init()) {
+                modemReady = true;
+                break;
+            }
+            Serial.println("Modem init failed, retrying...");
+            delay(1500);
         }
-        Serial.println("Modem init failed, retrying...");
-        delay(1500);
+
+        if (!modemReady) {
+            Serial.println("Fatal: Modem could not be initialized.");
+            return false;
+        }
+
+        // Hent navn og info
+        String name = modem.getModemName();
+        String info = modem.getModemInfo();
+
+        Serial.println("Modem Name: " + name);
+        Serial.println("Modem Info: " + info);
+
+        // Tjek om modem rapporterer korrekt navn
+        if (!name.startsWith("SIMCOM_Ltd SIMCOM_SIM7000E")) {
+            Serial.println("Warning: Wrong modem identication, retrying...");
+            modem.restart();  // fallback
+            delay(2000);
+            name = modem.getModemName();
+            Serial.println("Retry Modem Name: " + name);
+        }
     }
-
-    if (!modemReady) {
-        Serial.println("Fatal: Modem could not be initialized.");
-        return;
-    }
-
-    // Hent navn og info
-    String name = modem.getModemName();
-    String info = modem.getModemInfo();
-
-    Serial.println("Modem Name: " + name);
-    Serial.println("Modem Info: " + info);
-
-    // Tjek om modem rapporterer korrekt navn
-    if (!name.startsWith("SIMCOM_Ltd SIMCOM_SIM7000E")) {
-        Serial.println("Warning: Wrong modem identication, retrying...");
-        modem.restart();  // fallback
-        delay(2000);
-        name = modem.getModemName();
-        Serial.println("Retry Modem Name: " + name);
-    }
+    return true;
 }
 
 

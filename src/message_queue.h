@@ -6,6 +6,9 @@
 // Kø til GPS-beskeder
 extern QueueHandle_t gpsQueue;
 
+// Kø til SENSE-beskeder
+extern QueueHandle_t senseQueue;
+
 // Kø til GPRS-beskeder
 extern QueueHandle_t gprsQueue;
 
