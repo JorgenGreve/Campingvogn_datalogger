@@ -1,20 +1,24 @@
-#define SerialMon Serial        // Set serial for debug console
-
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
 #include <Ticker.h>
-#include "gps.h"
-#include "data.h"
-#include "gprs.h"
+#include "gpsTASK.h"
+#include "dataTASK.h"
+#include "gprsTASK.h"
 #include "message_queue_cmd.h"
 #include "modem.h"
 #include "database.h"
-#include "data.h"
 #include "senseTASK.h"
 #include "errorHandler.h"
+#include "osTimer.h"
+#include "esp_heap_caps.h"
+#include "main.h"
+#include "global.h"
+#include "mqtt.h"
+#include "tempHumid.h"
 
 #define MAX_RETRY_CNT       5
+#define SerialMon           Serial // Set serial for debug console
 
 // Message queue handlers
 QueueHandle_t gpsQueue;
@@ -24,8 +28,10 @@ QueueHandle_t dataQueue;
 QueueHandle_t mainQueue;
 
 void taskMAIN(void *pvParameters);
-bool isItTimeToTx(void);
-bool theStructIsInUse(IsTheStructInUse structInUse);
+bool isItTimeToSaveData(void);
+void printFreeRAM();
+void printFreePSRAM(String beforeOrAfterRamAllocation);
+void allocateSpaceForPSRAM_buffer();
 
 void setup()
 {
@@ -35,8 +41,11 @@ void setup()
     Serial.println("-----------------------------------------------------");
     Serial.println("|                  SYSTEM STARTED                   |");
     Serial.println("-----------------------------------------------------");
-    
-    //initSensors(); MANGLER IMPLEMENTERING
+
+    printFreeRAM();
+    allocateSpaceForPSRAM_buffer();
+
+
     Serial.println("MAIN:     MAIN_INIT_GPS        RUN");
     if(!initGPS()) ERRORhandler(GPS_INIT_ERROR);
     Serial.println("MAIN:     MAIN_INIT_GPS        OK");
@@ -46,46 +55,67 @@ void setup()
     if(initGPRS()){connectGPRS();}
     else{ERRORhandler(GPRS_INIT_ERROR);}
     Serial.println("MAIN:     MAIN_INIT_GPRS       OK");
+
+    Serial.println("MAIN:     MAIN_INIT_AHT10      RUN");
+    initAHT10();
+    Serial.println("MAIN:     MAIN_INIT_AHT10      OK");
+
+    Serial.println("MAIN:     MAIN_INIT_MQTT       RUN");
+    mqttClient.setServer(mqtt_server, mqtt_port);
+    // Optionelt: mqttClient.setCallback(...) hvis du skal modtage
+    Serial.println("MAIN:     MAIN_INIT_MQTT       OK");
+
     
     // Create message queues
+    gprsQueue = xQueueCreate(10, sizeof(int));
     gpsQueue  = xQueueCreate(10, sizeof(int));
     senseQueue = xQueueCreate(10, sizeof(int));
     dataQueue = xQueueCreate(10, sizeof(int));
     mainQueue = xQueueCreate(10, sizeof(int));
     
-    
-
-    if (!gpsQueue || !senseQueue || !dataQueue || !mainQueue)
+    if (!gpsQueue || !senseQueue || !dataQueue || !mainQueue || !gprsQueue)
     {
         Serial.println("Queue creation error!");
         while (1);
     }
 
-    //------------------------------------------------------------------------------------------------
-    // taskMODEM        check GPRS status and reinitialize if needed
-    //------------------------------------------------------------------------------------------------
-    //xTaskCreatePinnedToCore(taskMODEM,"GPS", 2000, NULL, 1, NULL, 1);
+    modemMutex = xSemaphoreCreateMutex();
+    i2cMutex = xSemaphoreCreateMutex();
+
+    if (modemMutex == NULL)
+    {
+        Serial.println("❌ Failed to create modem mutex");
+    }
 
     //------------------------------------------------------------------------------------------------
     // taskGPS          handle all GPS related tasks
     //------------------------------------------------------------------------------------------------
-    xTaskCreatePinnedToCore(taskGPS,"GPS", 2000, NULL, 2, NULL, 1);
-    
+    xTaskCreatePinnedToCore(taskGPS,"GPS", 2560, NULL, 1, NULL, 1); // Prioritet 2
+
     //------------------------------------------------------------------------------------------------
     // taskSENSE        handle all sensor related tasks
     //------------------------------------------------------------------------------------------------
-    xTaskCreatePinnedToCore(taskSENSE,"SENSE", 2000, NULL, 2, NULL, 1);
+    xTaskCreatePinnedToCore(taskSENSE,"SENSE", 3072, NULL, 1, NULL, 1); // Prioritet 2
     
     //------------------------------------------------------------------------------------------------
     // taskDATA         collect all data, make it ready for transmission and store in a buffer
     //------------------------------------------------------------------------------------------------
-    xTaskCreatePinnedToCore(taskDATA,"DATA", 2000, NULL, 3, NULL, 1);
+    xTaskCreatePinnedToCore(taskDATA,"DATA", 2048, NULL, 1, NULL, 1); // Prioritet 1
     
     //------------------------------------------------------------------------------------------------
-    // taskMAIN         transmit data to the database whenever data is ready
+    // taskMAIN         handle sampling timing
     //------------------------------------------------------------------------------------------------
-    xTaskCreatePinnedToCore(taskMAIN,"MAIN", 2000, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(taskMAIN,"MAIN", 2560, NULL, 1, NULL, 1); // Prioritet 1
     
+    //------------------------------------------------------------------------------------------------
+    // taskGPRS        check GPRS status and reinitialize if needed
+    //------------------------------------------------------------------------------------------------
+    xTaskCreatePinnedToCore(taskGPRS,"GPRS", 3072, NULL, 1, NULL, 1); // Prioritet 2
+
+    delay(500);
+
+    createOsTimers();
+
     Serial.println("-----------------------------------------------------");
     Serial.println("|                  SETUP HAS RUN                    |");
     Serial.println("-----------------------------------------------------");
@@ -93,19 +123,12 @@ void setup()
 
 
 
-
-void taskMAIN(void *pvParameters) // taskMAIN is responsible for checking whenever data is ready to be transmitted and then transmit the data
+void taskMAIN(void *pvParameters)
 {
-    Serial.println("TaskMAIN  running");
-    MainCommand cmd;
-    GpsCommand cmdGPS;
-    GprsCommand cmdGPRS;
+    Serial.println("TaskMAIN running");
+    MainCommand cmd = MAIN_IDLE;
 
-    cmd = MAIN_IDLE;
-
-    bool itsTimeToTx = false;
-
-    while(1)
+    while (1)
     {
         MainCommand incomingCmd;
         if (xQueueReceive(mainQueue, &incomingCmd, 0) == pdPASS) {
@@ -115,46 +138,37 @@ void taskMAIN(void *pvParameters) // taskMAIN is responsible for checking whenev
         switch (cmd)
         {
             case MAIN_IDLE:
-                vTaskDelay(100 / portTICK_PERIOD_MS);
-                if(isItTimeToTx())
-                {
-                    itsTimeToTx = true;
-                }
-                break;
-            
-            case MAIN_ALL_DATA_READY:
-                Serial.println("MAIN: All data ready!");
-                MainCommand cmdOut;
-                cmdOut = MAIN_IS_IT_TIME_TO_TX;
-                xQueueSend(mainQueue, &cmdOut, portMAX_DELAY);
-                cmd = MAIN_IDLE;
-                break;
-            
-            case MAIN_IS_IT_TIME_TO_TX:
-                if(itsTimeToTx)
-                {
-                    MainCommand cmdOut;
-                    cmdOut = MAIN_TRANSMIT_DATA;
-                    xQueueSend(mainQueue, &cmdOut, portMAX_DELAY);
-                    itsTimeToTx = false;
-                }
-                cmd = MAIN_IDLE;
-                break;
+                mainFreeStackPrint.printFreeStack();
 
-            case MAIN_TRANSMIT_DATA:
-                Serial.println("MAIN: MAIN_TRANSMIT_DATA");
-                postDataToServer(gpsData, tempHumidData);
-                cmd = MAIN_IDLE;
+                if(isItTimeToSaveData())
+                {
+                    
+                    DataCommand cmdOut = DATA_TIME_TO_SAVE;
+                    xQueueSend(dataQueue, &cmdOut, portMAX_DELAY);
+                }
+                
+                if(!gprsConnectionLostFlag && xSemaphoreTake(modemMutex, pdMS_TO_TICKS(1000)) == pdTRUE)
+                {
+                    mqttClient.loop();
+                    xSemaphoreGive(modemMutex);
+                }
+                else if(!gprsConnectionLostFlag)
+                {
+                    //Serial.println("⚠️ Could not acquire modem mutex for GPS. taskMAIN()");
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                }
+                else if(gprsConnectionLostFlag)
+                {
+
+                }
+                vTaskDelay(100 / portTICK_PERIOD_MS);
                 break;
             
             default:
-                Serial.println("MAIN: Unknown command");
                 break;
         }
-        cmd = MAIN_IDLE;
     }
 }
-
 
 void loop()
 {
@@ -171,7 +185,7 @@ void loop()
 // >15 kmh = 1000 ms
 // y = -59933.333 x + 900000;
 
-bool isItTimeToTx(void)
+bool isItTimeToSaveData(void)
 {
     static uint32_t nextTxTick = 0;
     static uint32_t currentTimeToTx_ms = 0;
@@ -179,75 +193,86 @@ bool isItTimeToTx(void)
 
     uint32_t currentTick = xTaskGetTickCount();
 
-    uint16_t retryCnt = 0;
-    while (theStructIsInUse(GPS_DATA_STRUCT) && retryCnt <= MAX_RETRY_CNT)
-    {
-        retryCnt++;
+    float currentSpeed = gpsDataTemporary.speed;
 
-        if (retryCnt == MAX_RETRY_CNT)
-        {
-            Serial.println("ERROR: isItTimeToTx() failed - too many struct retries");
-            return false;
-        }
+    // Beregn nyt interval afhængigt af hastighed
+    // Hvor ofte der transmitteres bestemmes også af sample hastigheden for sense og gps, se osTimer.cpp
+    if (currentSpeed <= 15.0f)
+    {
+        currentTimeToTx_ms = (uint32_t)(-59933.333f * currentSpeed + 900000);
+    }
+    else
+    {
+        currentTimeToTx_ms = 1000;
     }
 
-    if (!theStructIsInUse(GPS_DATA_STRUCT))
+    //currentTimeToTx_ms = 5000;                   // DEBUG
+
+    // Hvis intervallet er ændret, opdatér næste tidspunkt
+    if (currentTimeToTx_ms != lastTimeToTx_ms)
     {
-        float currentSpeed = gpsData.speed;
+        lastTimeToTx_ms = currentTimeToTx_ms;
+        nextTxTick = currentTick + currentTimeToTx_ms;
+    }
 
-        // Beregn nyt interval afhængigt af hastighed
-        if (currentSpeed <= 15.0f)
-        {
-            currentTimeToTx_ms = (uint32_t)(-59933.333f * currentSpeed + 900000);
-        }
-        else
-        {
-            currentTimeToTx_ms = 1000;
-        }
-
-        //currentTimeToTx_ms = 10000;                   // DEBUG
-
-        // Hvis intervallet er ændret, opdatér næste tidspunkt
-        if (currentTimeToTx_ms != lastTimeToTx_ms)
-        {
-            lastTimeToTx_ms = currentTimeToTx_ms;
-            nextTxTick = currentTick + currentTimeToTx_ms;
-        }
-
-        // Wrap-around sikker kontrol
-        if ((int32_t)(currentTick - nextTxTick) >= 0)
-        {
-            nextTxTick = currentTick + currentTimeToTx_ms;
-            return true;
-        }
-
-        // Debug
-        /*
-        Serial.print("Speed: "); Serial.println(currentSpeed);
-        Serial.print("Tx interval (ms): "); Serial.println(currentTimeToTx_ms);
-        Serial.print("Next Tx at tick: "); Serial.println(nextTxTick);
-        Serial.print("Current tick: "); Serial.println(currentTick);
-        Serial.println();
-        */
+    // Wrap-around sikker kontrol
+    if ((int32_t)(currentTick - nextTxTick) >= 0)
+    {
+        nextTxTick = currentTick + currentTimeToTx_ms;
+        return true;
     }
 
     return false;
 }
 
 
-
-bool theStructIsInUse(IsTheStructInUse structInUse)
+void printFreeRAM()
 {
-    switch (structInUse)
-    {
-    case  GPS_DATA_STRUCT:
-        return gpsData.gpsStructInUse;
-    
-    case  TEMP_HUMID_DATA_STRUCT:
-        return tempHumidData.tempHumidStructInUse;
+    Serial.println("");
+    Serial.print("Free heap:           ");
+    Serial.print(ESP.getFreeHeap()/1000);
+    Serial.println(" kB");
 
-    default:
-        return true;
-        break;
+    Serial.print("Largest free block:  ");
+    Serial.print(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)/1000);
+    Serial.println(" kB");
+    Serial.println("");
+}
+
+void printFreePSRAM(String beforeOrAfterRamAllocation)
+{
+    size_t free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+    
+    Serial.println("");
+    Serial.println(beforeOrAfterRamAllocation);
+    Serial.print("Free PSRAM:          ");
+    Serial.print(free / 1024);
+    Serial.println(" kB");
+
+    Serial.print("Largest PSRAM block: ");
+    Serial.print(largest / 1024);
+    Serial.println(" kB");
+    Serial.println("");
+}
+
+
+void allocateSpaceForPSRAM_buffer()
+{
+    printFreePSRAM("Before PSRAM allocation");
+    PSRAM_buffer = (CombinedData *)ps_malloc(sizeof(CombinedData) * MAX_PSRAM_SAMPLES);
+    
+    if (PSRAM_buffer == NULL)
+    {
+        Serial.println("PSRAM allocation failed!");
     }
+    else
+    {
+        Serial.print("Allocated PSRAM buffer for ");
+        Serial.print(MAX_PSRAM_SAMPLES);
+        Serial.print(" samples (");
+        Serial.print(sizeof(CombinedData) * MAX_PSRAM_SAMPLES / 1024);
+        Serial.println(" kB)");
+    }
+    printFreePSRAM("After PSRAM allocation");
 }

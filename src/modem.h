@@ -7,8 +7,8 @@
 
 //Deklarér dem som eksisterende variabler (defineret i main.cpp)
 extern HardwareSerial SerialAT;
-extern TinyGsm modem;
-extern TinyGsmClient client;
+//extern TinyGsm modem;
+//extern TinyGsmClient client;
 
 void initModemSerial();
 

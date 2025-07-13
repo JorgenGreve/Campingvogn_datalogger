@@ -5,38 +5,37 @@
 typedef enum
 {
     SENSE_IDLE = 0,
-    SENSE_RUN,
+    SENSE_SAMPLE,
 } SenseCommand;
 
 typedef enum
 {
     GPS_IDLE = 0,
-    GPS_RUN,
+    GPS_SAMPLE,
 } GpsCommand;
 
 
 typedef enum
 {
     GPRS_IDLE = 0,
-    GPRS_SETUP,
-    GPRS_RUN,
+    GPRS_TRANSMIT,
+    GPRS_RECONNECT,
 } GprsCommand;
 
 
 typedef enum
 {
     DATA_IDLE = 0,
-    GPS_DATA_READY,
-    SENSE_DATA_READY,
+    DATA_GPS_DATA_READY,
+    DATA_SENSE_DATA_READY,
+    DATA_TIME_TO_SAVE,
+    DATA_SAVE_TO_RAM,
 } DataCommand;
 
 
 typedef enum
 {
     MAIN_IDLE = 0,
-    MAIN_ALL_DATA_READY,
-    MAIN_IS_IT_TIME_TO_TX,
-    MAIN_TRANSMIT_DATA,
 } MainCommand;
 
 

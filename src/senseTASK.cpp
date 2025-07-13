@@ -1,16 +1,16 @@
 #include <Arduino.h>
 #include <TinyGsmClient.h>
-#include "gps.h"
-#include "data.h"
+#include "gpsTASK.h"
+#include "dataTASK.h"
 #include "modem.h"
-#include "gprs.h"
+#include "gprsTASK.h"
 #include "message_queue_cmd.h"
 #include "message_queue.h"
 #include "tempHumid.h"
+#include "global.h"
+#include "errorHandler.h"
 
-
-
-
+#define SENSE_MAX_RETRIES         10
 
 
 
@@ -30,34 +30,64 @@ void taskSENSE(void *pvParameters)
     Serial.println("SenseTASK  running");
     SenseCommand cmd;
     DataCommand dataCmd;
+    uint8_t senseRetryCnt = 0;
 
-    cmd = SENSE_RUN;
+    cmd = SENSE_IDLE;
 
     while (1)
     {
         SenseCommand incomingCmd;
-        if (xQueueReceive(senseQueue, &incomingCmd, 0) == pdPASS) {
+        if (xQueueReceive(senseQueue, &incomingCmd, portMAX_DELAY) == pdPASS) {
             cmd = incomingCmd;
         }
 
         switch (cmd)
         {
             case SENSE_IDLE:
-            // DO NOTHING
-            vTaskDelay(500 / portTICK_PERIOD_MS);
-            //Serial.println("SENSE: SENSE IDLE");
+            Serial.println("SENSE: idle");
             break;
 
-            case SENSE_RUN:
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-            if(getTempHumid(0))
+            case SENSE_SAMPLE:
             {
-                dataCmd = SENSE_DATA_READY;
-                xQueueSend(dataQueue, &dataCmd, portMAX_DELAY);
+                senseFreeStackPrint.printFreeStack();
+
+                if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+                {
+                    bool stateOk = false;
+                    if(getTempHumid(0) && getTempHumid(1)) stateOk = true;
+                    else stateOk = false;
+                    
+                    xSemaphoreGive(i2cMutex);
+                
+                    if (stateOk)                                 // Sample taken, everything OK
+                    {
+                        dataCmd = DATA_SENSE_DATA_READY;
+                        xQueueSend(dataQueue, &dataCmd, portMAX_DELAY);
+                    }
+                }
+                else                                        // Sample NOT taken, an error has occured, try again
+                {
+                    Serial.print("SENSE: senseRetryCnt = "); Serial.println(senseRetryCnt);
+                    senseRetryCnt++;
+                    vTaskDelay(50 / portTICK_PERIOD_MS);
+                    SenseCommand senseCmd = SENSE_SAMPLE;
+                    xQueueSend(senseQueue, &senseCmd, pdMS_TO_TICKS(500));
+                }
+
+                if(senseRetryCnt >= (SENSE_MAX_RETRIES/2))      // Try to recover the GPS if half of max retries has been reached
+                {
+                    Serial.println("SENSE: Recover temp/humid sensors");
+                    Serial.println("SENSE: Recover NOT IMPLEMENTED YET");       // REMEMBER TO IMPLEMENT THIS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                }
+
+                if(senseRetryCnt >= SENSE_MAX_RETRIES)          // Error -> restart system
+                {
+                    ERRORhandler(SENSE_RETRY_ERROR);
+                    senseRetryCnt = 0;        // Should not happend
+                }
+                
+                
             }
-            //getTempHumid(1);
-            
-            //Serial.print("SENSE: SENSE_RUN");
             break;
 
             default:
@@ -67,4 +97,5 @@ void taskSENSE(void *pvParameters)
         
 
     }
+    cmd = SENSE_IDLE;
 }

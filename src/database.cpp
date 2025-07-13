@@ -1,22 +1,58 @@
 #include <Arduino.h>
-#include <TinyGsmClient.h>
+//#include <TinyGsmClient.h>
 #include <HTTPClient.h>
 #include "modem.h"
-#include "data.h"
-#include "gprs.h"
+#include "dataTASK.h"
+#include "gprsTASK.h"
 #include "database.h"
+#include "global.h"
 
-const char* serverName = "http://caravan.jorgre.dk/submit.php"; // Server URL
+//const char* serverName = "http://caravan.jorgre.dk/submit.php"; // Server URL
+
+/*
+bool sendDataMQTT(const GpsData& gpsData, const TempHumidData& tempHumidData)
+{
+    int cnt = 0;
+    while (PSRAM_buffer->psramBufferInUse) {
+        Serial.println("");
+        Serial.print("Struct is in use "); Serial.println(cnt++);
+        Serial.println("");
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+
+    Serial.println("");
+    Serial.println("Post data to server start...");
+
+    char timestamp[20];
+    sprintf(timestamp, "%04d-%02d-%02d %02d:%02d:%02d",
+            gpsData.year, gpsData.month, gpsData.day,
+            gpsData.hour, gpsData.minute, gpsData.second);
+
+    String payload = "{";
+    payload += "\"timestamp\":\"" + String(timestamp) + "\",";
+    payload += "\"lat\":" + String(gpsData.lat, 6) + ",";
+    payload += "\"lon\":" + String(gpsData.lon, 6) + ",";
+    payload += "\"speed\":" + String(gpsData.speed, 2) + ",";
+    payload += "\"alt\":" + String(gpsData.alt, 1) + ",";
+    payload += "\"temp_in\":" + String(tempHumidData.tempCaravan, 1) + ",";
+    payload += "\"hum_in\":" + String(tempHumidData.humidCaravan, 1) + ",";
+    payload += "\"temp_out\":" + String(tempHumidData.tempOutside, 1) + ",";
+    payload += "\"hum_out\":" + String(tempHumidData.humidOutside, 1);
+    payload += "}";
+
+}
+*/
 
 
+/*
 bool postDataToServer(const GpsData& gpsData, const TempHumidData& tempHumidData)
 {
-    if(gpsData.gpsDataReady== false) 
-    {
-        return false;
-    }
+    //if(gpsData.gpsDataReady== false)
+    //{
+    //    return false;
+    //}
     int cnt = 0;
-    while (gpsData.gpsStructInUse) {
+    while (PSRAM_buffer->psramBufferInUse) {
         Serial.println("");
         Serial.print("Struct is in use "); Serial.println(cnt++);
         Serial.println("");
@@ -41,7 +77,7 @@ bool postDataToServer(const GpsData& gpsData, const TempHumidData& tempHumidData
                     "&temp_out=" + String(tempHumidData.tempOutside, 1) +
                     "&hum_out=" + String(tempHumidData.humidOutside, 1);
 
-    Serial.println("POSTing: " + postData);
+    //Serial.println("POSTing: " + postData);
 
     SerialAT.println("AT+HTTPTERM"); vTaskDelay(100 / portTICK_PERIOD_MS);
     SerialAT.println("AT+HTTPINIT"); vTaskDelay(200 / portTICK_PERIOD_MS);
@@ -115,3 +151,4 @@ bool postDataToServer(const GpsData& gpsData, const TempHumidData& tempHumidData
     Serial.println("Server did not return success.");
     return false;
 }
+*/

@@ -1,12 +1,14 @@
 #include <Arduino.h>
 
+#define RESTART_CNT_DWN         5           // 1 is minimum, else cntDwn will overrun (underrun)
+
 
 void ERRORhandler(const char *ERROR_IDENTIFIER)
 {
-    uint8_t cntDwn = 10;
+    uint8_t cntDwn = RESTART_CNT_DWN;
     while(1)
     {
-        if(cntDwn == 10)
+        if(cntDwn == RESTART_CNT_DWN)
         {
             Serial.println("");
             Serial.println("!!!!!!!!! ERROR !!!!!!!!!!!!!");
@@ -16,7 +18,7 @@ void ERRORhandler(const char *ERROR_IDENTIFIER)
         }
         Serial.print(cntDwn); Serial.print(", ");
         cntDwn--;
-        if(cntDwn == 0)
+        if(cntDwn == RESTART_CNT_DWN - RESTART_CNT_DWN)
         {
             Serial.print("");
             esp_restart();
