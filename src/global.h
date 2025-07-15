@@ -14,6 +14,10 @@
 // PSRAM
 #define MAX_PSRAM_SAMPLES               45000
 
+// AHT10 TEMP/HUMID SENSOR
+#define AHT10_IN_PIN                    13
+#define AHT10_OUT_PIN                   14
+
 
 #define txSampleIndex                   PSRAM_buffer->transmitSampleIndex
 #define saveSampleIndex                 PSRAM_buffer->storeSampleIndex
