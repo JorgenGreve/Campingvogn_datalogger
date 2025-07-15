@@ -53,17 +53,14 @@ void taskSENSE(void *pvParameters)
 
                 if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(100)) == pdTRUE)
                 {
-                    bool stateOk = false;
-                    if(getTempHumid(0) && getTempHumid(1)) stateOk = true;
-                    else stateOk = false;
+
+                    getTempHumid(AHT10_IN_PIN);
+                    getTempHumid(AHT10_OUT_PIN);
                     
                     xSemaphoreGive(i2cMutex);
-                
-                    if (stateOk)                                 // Sample taken, everything OK
-                    {
-                        dataCmd = DATA_SENSE_DATA_READY;
-                        xQueueSend(dataQueue, &dataCmd, portMAX_DELAY);
-                    }
+                    
+                    dataCmd = DATA_SENSE_DATA_READY;
+                    xQueueSend(dataQueue, &dataCmd, portMAX_DELAY);
                 }
                 else                                        // Sample NOT taken, an error has occured, try again
                 {

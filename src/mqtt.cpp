@@ -68,6 +68,16 @@ bool sendDataMQTT(const GpsData& gpsData, const TempHumidData& tempHumidData)
     payload += "\"hum_out\":" + String(tempHumidData.humidOutside, 1);
     payload += "}";
 
+    static String lastPayload;
+
+    if(payload == lastPayload)
+    {
+        Serial.println("🔄 Duplicate payload – skipping send.");
+        return false;
+    }
+
+    lastPayload = payload;
+
     //Serial.println("MQTT Payload:");
     //Serial.println(payload);
 

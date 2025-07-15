@@ -49,7 +49,6 @@ void setup()
     Serial.println("MAIN:     MAIN_INIT_GPS        RUN");
     if(!initGPS()) ERRORhandler(GPS_INIT_ERROR);
     Serial.println("MAIN:     MAIN_INIT_GPS        OK");
-
     
     Serial.println("MAIN:     MAIN_INIT_GPRS       RUN");
     if(initGPRS()){connectGPRS();}
@@ -65,7 +64,6 @@ void setup()
     // Optionelt: mqttClient.setCallback(...) hvis du skal modtage
     Serial.println("MAIN:     MAIN_INIT_MQTT       OK");
 
-    
     // Create message queues
     gprsQueue = xQueueCreate(10, sizeof(int));
     gpsQueue  = xQueueCreate(10, sizeof(int));
@@ -206,7 +204,7 @@ bool isItTimeToSaveData(void)
         currentTimeToTx_ms = 1000;
     }
 
-    //currentTimeToTx_ms = 5000;                   // DEBUG
+    //currentTimeToTx_ms = 10000;                   // DEBUG
 
     // Hvis intervallet er ændret, opdatér næste tidspunkt
     if (currentTimeToTx_ms != lastTimeToTx_ms)
